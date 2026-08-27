@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { BookOpen, MessageSquare, ReceiptText, Trash2 } from "lucide-react";
 import { LampMark } from "@/components/lamp-mark";
 import { PacketPane } from "@/components/packet-pane";
@@ -46,11 +47,13 @@ export function Desk() {
   return (
     <div className="desk-glow flex h-dvh flex-col overflow-hidden pt-12">
       <header className="flex items-center gap-3 border-b border-border px-4 py-3 sm:px-6">
-        <LampMark className="size-7 text-lamp" />
-        <div className="min-w-0 flex-1">
-          <p className="font-display text-lg leading-none font-medium">Carrel</p>
-          <p className="truncate text-xs text-muted-foreground">Private desk · {who}</p>
-        </div>
+        <Link to="/" className="flex min-w-0 flex-1 items-center gap-3 text-inherit no-underline">
+          <LampMark className="size-7 text-lamp" />
+          <div className="min-w-0">
+            <p className="font-display text-lg leading-none font-medium">Carrel</p>
+            <p className="truncate text-xs text-muted-foreground">Private desk · {who}</p>
+          </div>
+        </Link>
         <Badge variant={receipts.length ? "slip" : "default"}>
           {receipts.length === 0 ? "Sealed" : `${receipts.length} receipt${receipts.length === 1 ? "" : "s"}`}
         </Badge>
