@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import type { Excerpt } from "@/lib/packet";
+import { lampModelId } from "@/lib/lamp-model";
 
 type Ok = { ok: true; text: string };
 type Fail = { ok: false; error: string };
@@ -16,7 +17,7 @@ async function complete(messages: { role: "system" | "user"; content: string }[]
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "grok-4.5",
+      model: lampModelId(),
       messages,
       temperature: 0.2,
       max_tokens: maxTokens,

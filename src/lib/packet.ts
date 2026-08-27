@@ -168,6 +168,24 @@ function tokens(q: string): string[] {
     .filter((t) => t.length > 2 && !STOP.has(t));
 }
 
+const IDENTITY_HEADING =
+  /^(identity|patient|patient identity|demographics|contacts?|emergency contact|identifiers?)$/i;
+
+export function isIdentitySection(
+  section: { heading: string; body?: string; text?: string },
+  identity: Identity,
+): boolean {
+  const heading = section.heading.replace(/\s*[—(].*$/, "").trim();
+  if (IDENTITY_HEADING.test(heading)) return true;
+  const body = section.body ?? section.text ?? "";
+  const markers = [identity.name, identity.mrn, identity.phone, identity.dob, identity.address].filter(
+    (term): term is string => Boolean(term && term.length >= 3),
+  );
+  if (markers.length === 0) return false;
+  const hits = markers.filter((term) => body.includes(term)).length;
+  return hits >= 2;
+}
+
 export function retrieveExcerpts(packet: Packet, query: string, k = 5): Excerpt[] {
   const terms = tokens(query);
   const scored = packet.sections.map((sec) => {
@@ -184,10 +202,8 @@ export function retrieveExcerpts(packet: Packet, query: string, k = 5): Excerpt[
   scored.sort((a, b) => b.score - a.score);
 
   const strong = scored.filter((s) => s.score >= 2);
-  const pool = strong.length ? strong : scored.slice(0, 2);
-
   const picked: Excerpt[] = [];
-  for (const { sec } of pool) {
+  for (const { sec } of strong) {
     if (picked.length >= k) break;
     const text = sec.body.length > 900 ? `${sec.body.slice(0, 880).trim()}…` : sec.body;
     picked.push({
@@ -195,15 +211,6 @@ export function retrieveExcerpts(packet: Packet, query: string, k = 5): Excerpt[
       heading: sec.heading,
       text,
       start: sec.start,
-    });
-  }
-  if (!picked.length) {
-    const first = packet.sections[0];
-    picked.push({
-      id: first.id,
-      heading: first.heading,
-      text: first.body.slice(0, 900),
-      start: first.start,
     });
   }
   return picked;

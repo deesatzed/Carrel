@@ -4,19 +4,41 @@ import { ArrowRight, FileText, Lamp, ScrollText, Bookmark, Search, ReceiptText }
 import { Button } from "@/components/ui/button";
 import { LampMark } from "@/components/lamp-mark";
 import { PastePacketDialog } from "@/components/paste-packet-dialog";
+import { ConfirmDeskDialog } from "@/components/confirm-desk-dialog";
+import { sitWithDemoIntent } from "@/lib/desk-safety";
 import { useDesk } from "@/lib/store";
 
 export function Landing() {
   const loadDemo = useDesk((s) => s.loadDemo);
   const packet = useDesk((s) => s.packet);
+  const turns = useDesk((s) => s.turns);
+  const keeps = useDesk((s) => s.keeps);
+  const receipts = useDesk((s) => s.receipts);
   const navigate = useNavigate();
   const [pasteOpen, setPasteOpen] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
   const occupied = mounted && Boolean(packet);
 
+  const occupancy = {
+    packet: packet ? { source: packet.source } : null,
+    turnCount: turns.length,
+    keepCount: keeps.length,
+    receiptCount: receipts.length,
+  };
+
   const sit = () => {
+    const intent = sitWithDemoIntent(occupancy);
+    if (intent === "open-desk") {
+      void navigate({ to: "/desk" });
+      return;
+    }
+    if (intent === "confirm-replace") {
+      setReplaceOpen(true);
+      return;
+    }
     loadDemo();
     void navigate({ to: "/desk" });
   };
@@ -44,11 +66,11 @@ export function Landing() {
             room: the packet stays on the desk until you stamp what may go outside.
           </p>
           <div className="stagger-in mt-8 flex flex-col gap-3 sm:flex-row">
-            <Button size="lg" className="h-12" onClick={sit}>
+            <Button size="lg" className="h-12" disabled={!mounted} onClick={sit}>
               <Lamp className="size-4" />
               Sit with the demo packet
             </Button>
-            <Button size="lg" variant="outline" className="h-12" onClick={() => setPasteOpen(true)}>
+            <Button size="lg" variant="outline" className="h-12" disabled={!mounted} onClick={() => setPasteOpen(true)}>
               <FileText className="size-4" />
               Paste your own
             </Button>
@@ -167,7 +189,7 @@ export function Landing() {
             The demo packet is a fictional person. Use it first. Carrel is not a clinician, not HIPAA, and not safe
             for care. Ask still sends the passages you approve to a remote language model — on purpose, in the open.
           </p>
-          <Button size="lg" className="mt-6 h-12" onClick={sit}>
+          <Button size="lg" className="mt-6 h-12" disabled={!mounted} onClick={sit}>
             Sit with the demo packet
             <ArrowRight className="size-4" />
           </Button>
@@ -180,6 +202,17 @@ export function Landing() {
       </footer>
 
       <PastePacketDialog open={pasteOpen} onOpenChange={setPasteOpen} />
+      <ConfirmDeskDialog
+        open={replaceOpen}
+        onOpenChange={setReplaceOpen}
+        title="Replace the packet on the desk?"
+        body="This clears the hearing, keeps, and receipts, and lays the demo packet down instead."
+        confirmLabel="Replace with demo"
+        onConfirm={() => {
+          loadDemo();
+          void navigate({ to: "/desk" });
+        }}
+      />
     </div>
   );
 }

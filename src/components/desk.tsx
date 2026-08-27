@@ -5,8 +5,10 @@ import { LampMark } from "@/components/lamp-mark";
 import { PacketPane } from "@/components/packet-pane";
 import { HearingPane } from "@/components/hearing-pane";
 import { Airlock } from "@/components/airlock";
+import { ConfirmDeskDialog } from "@/components/confirm-desk-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { mustConfirmClear } from "@/lib/desk-safety";
 import {
   Sheet,
   SheetContent,
@@ -19,30 +21,16 @@ import { cn } from "@/lib/utils";
 
 export function Desk() {
   const packet = useDesk((s) => s.packet);
-  const turns = useDesk((s) => s.turns);
+  const receipts = useDesk((s) => s.receipts);
   const clearDesk = useDesk((s) => s.clearDesk);
   const [tab, setTab] = useState<"packet" | "hearing">("packet");
   const [receiptsOpen, setReceiptsOpen] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
   const [focusHeading, setFocusHeading] = useState<string | null>(null);
 
   if (!packet) return null;
 
   const who = packet.identity.preferred || packet.identity.name || "Packet";
-  const receipts = turns
-    .filter((t) => t.role === "user" && (t.mode === "ask" || t.mode === "lookup"))
-    .map((t) => ({
-      id: t.id,
-      at: t.createdAt,
-      kind: t.mode as "ask" | "lookup",
-      summary:
-        t.mode === "ask"
-          ? `Ask — ${(t.excerpts?.length ?? 0)} passage${(t.excerpts?.length ?? 0) === 1 ? "" : "s"} left this browser`
-          : "Call slip — packet stayed on the desk",
-      payload:
-        t.mode === "ask"
-          ? (t.excerpts ?? []).map((e) => `## ${e.heading}\n${e.text}`).join("\n\n")
-          : (t.slip?.cleaned ?? t.text),
-    }));
 
   return (
     <div className="desk-glow flex h-dvh flex-col overflow-hidden pt-12">
@@ -60,7 +48,15 @@ export function Desk() {
         <Button variant="ghost" size="icon" onClick={() => setReceiptsOpen(true)} aria-label="Open receipts">
           <ReceiptText className="size-4" />
         </Button>
-        <Button variant="ghost" size="icon" onClick={clearDesk} aria-label="Clear the desk">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => {
+            if (mustConfirmClear({ packet })) setClearOpen(true);
+            else clearDesk();
+          }}
+          aria-label="Clear the desk"
+        >
           <Trash2 className="size-4" />
         </Button>
       </header>
@@ -111,6 +107,15 @@ export function Desk() {
 
       <Airlock />
 
+      <ConfirmDeskDialog
+        open={clearOpen}
+        onOpenChange={setClearOpen}
+        title="Clear the desk?"
+        body="The packet, hearing, keeps, and receipts leave this browser. This cannot be undone."
+        confirmLabel="Clear the desk"
+        onConfirm={clearDesk}
+      />
+
       <Sheet open={receiptsOpen} onOpenChange={setReceiptsOpen}>
         <SheetContent>
           <SheetHeader>
@@ -128,8 +133,14 @@ export function Desk() {
               <article key={r.id} className="rounded-lg border border-border bg-secondary/40 p-3">
                 <p className="text-xs text-muted-foreground tabular-nums">
                   {new Date(r.at).toLocaleString()} · {r.kind === "ask" ? "Ask" : "Call slip"}
+                  {r.model ? ` · ${r.model}` : ""}
                 </p>
                 <p className="mt-1 text-sm">{r.summary}</p>
+                {r.unchecked && r.unchecked.length > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Left on the desk: {r.unchecked.map((u) => u.heading).join(" · ")}
+                  </p>
+                )}
                 <p className="mt-2 font-serif text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
                   {r.payload.slice(0, 500)}
                   {r.payload.length > 500 ? "…" : ""}

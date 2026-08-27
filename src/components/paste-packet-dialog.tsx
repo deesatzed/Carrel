@@ -19,8 +19,10 @@ export function PastePacketDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const loadPaste = useDesk((s) => s.loadPaste);
+  const packet = useDesk((s) => s.packet);
   const navigate = useNavigate();
   const [draft, setDraft] = useState("");
+  const replacing = Boolean(packet);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -30,6 +32,9 @@ export function PastePacketDialog({
           <DialogDescription className="text-ink-muted">
             Paste text only. It is stored in this browser, not in an account. Nothing is sent until you confirm an
             Ask or stamp a call slip.
+            {replacing
+              ? " A packet is already on the desk. Placing this one clears the hearing, keeps, and receipts."
+              : ""}
           </DialogDescription>
         </DialogHeader>
         <Textarea
@@ -51,7 +56,7 @@ export function PastePacketDialog({
               void navigate({ to: "/desk" });
             }}
           >
-            Place on the desk
+            {replacing ? "Replace the packet on the desk" : "Place on the desk"}
           </Button>
         </div>
       </DialogContent>

@@ -10,6 +10,15 @@ import {
   type Excerpt,
   type Packet,
 } from "@/lib/packet";
+import { excerptsToSend, toggleSelectedIds } from "@/lib/excerpt-choice";
+import {
+  makeAskReceipt,
+  makeSlipReceipt,
+  receiptsAfterAttempt,
+  type DeskReceipt,
+} from "@/lib/desk-receipts";
+import { inventedIdentifiers, slipPiiHits } from "@/lib/slip-guard";
+import { lampModelId } from "@/lib/lamp-model";
 import { uid } from "@/lib/utils";
 
 export type Mode = "ask" | "lookup" | "find";
@@ -32,17 +41,12 @@ export type Keep = {
   createdAt: number;
 };
 
-export type Receipt = {
-  id: string;
-  at: number;
-  kind: "ask" | "lookup";
-  summary: string;
-  payload: string;
-};
+export type Receipt = DeskReceipt;
 
 export type PendingAsk = {
   question: string;
   excerpts: Excerpt[];
+  selectedIds: string[];
 };
 
 export type PendingSlip = {
@@ -139,7 +143,11 @@ export const useDesk = create<DeskState>()(
         if (!packet) return;
         const excerpts = retrieveExcerpts(packet, question, 5);
         set({
-          pendingAsk: { question: question.trim(), excerpts },
+          pendingAsk: {
+            question: question.trim(),
+            excerpts,
+            selectedIds: excerpts.map((excerpt) => excerpt.id),
+          },
           pendingSlip: null,
           error: null,
         });
@@ -157,14 +165,14 @@ export const useDesk = create<DeskState>()(
       toggleAskExcerpt: (id) => {
         const pending = get().pendingAsk;
         if (!pending) return;
-        const has = pending.excerpts.some((e) => e.id === id);
-        if (has && pending.excerpts.length === 1) return;
         set({
           pendingAsk: {
             ...pending,
-            excerpts: has
-              ? pending.excerpts.filter((e) => e.id !== id)
-              : pending.excerpts,
+            selectedIds: toggleSelectedIds(
+              pending.selectedIds,
+              id,
+              pending.excerpts.map((excerpt) => excerpt.id),
+            ),
           },
         });
       },
@@ -192,28 +200,47 @@ export const useDesk = create<DeskState>()(
       confirmAsk: async (run) => {
         const { packet, pendingAsk } = get();
         if (!packet || !pendingAsk) return;
+        const excerpts = excerptsToSend(pendingAsk);
+        if (excerpts.length === 0) {
+          set({
+            pendingAsk: null,
+            error: "No passage on the packet matched. Nothing was sent.",
+          });
+          return;
+        }
         const left = get().remaining();
         if (left <= 0) {
           set({ error: "Today’s lamp is spent. Come back tomorrow." });
           return;
         }
+        const at = Date.now();
+        const model = lampModelId();
         const userTurn: Turn = {
           id: uid("q"),
           role: "user",
           mode: "ask",
           text: pendingAsk.question,
-          excerpts: pendingAsk.excerpts,
-          createdAt: Date.now(),
+          excerpts,
+          createdAt: at,
         };
         set({
           working: { stage: "Reading the pages you approved" },
           pendingAsk: null,
           error: null,
           turns: [...get().turns, userTurn],
+          receipts: receiptsAfterAttempt(
+            get().receipts,
+            makeAskReceipt(excerpts, at, uid("rx"), {
+              model,
+              unchecked: pendingAsk.excerpts
+                .filter((e) => !pendingAsk.selectedIds.includes(e.id))
+                .map((e) => ({ id: e.id, heading: e.heading })),
+            }),
+          ),
         });
         const result = await run({
           question: pendingAsk.question,
-          excerpts: pendingAsk.excerpts,
+          excerpts,
         });
         const stamp = todayStamp();
         const count = get().dailyStamp === stamp ? get().dailyCount + 1 : 1;
@@ -236,6 +263,28 @@ export const useDesk = create<DeskState>()(
           });
           return;
         }
+        const leaked = inventedIdentifiers(result.text, excerpts, packet.identity);
+        if (leaked.length) {
+          set({
+            working: null,
+            dailyStamp: stamp,
+            dailyCount: count,
+            error:
+              "The lamp used identifiers that were not in the pages you approved. The answer was discarded.",
+            turns: [
+              ...get().turns,
+              {
+                id: uid("a"),
+                role: "lamp",
+                mode: "ask",
+                text: "The answer was discarded because it named people or records that were not on the pages you approved.",
+                excerpts,
+                createdAt: Date.now(),
+              },
+            ],
+          });
+          return;
+        }
         set({
           working: null,
           dailyStamp: stamp,
@@ -247,47 +296,47 @@ export const useDesk = create<DeskState>()(
               role: "lamp",
               mode: "ask",
               text: result.text,
-              excerpts: pendingAsk.excerpts,
+              excerpts,
               createdAt: Date.now(),
             },
-          ],
-          receipts: [
-            {
-              id: uid("rx"),
-              at: Date.now(),
-              kind: "ask",
-              summary: `Ask — ${pendingAsk.excerpts.length} passage${pendingAsk.excerpts.length === 1 ? "" : "s"} left this browser`,
-              payload: pendingAsk.excerpts
-                .map((e) => `## ${e.heading}\n${e.text}`)
-                .join("\n\n")
-                .slice(0, 4000),
-            },
-            ...get().receipts,
           ],
         });
       },
       confirmSlip: async (run) => {
         const pending = get().pendingSlip;
-        if (!pending) return;
+        const packet = get().packet;
+        if (!pending || !packet) return;
         const left = get().remaining();
         if (left <= 0) {
           set({ error: "Today’s lamp is spent. Come back tomorrow." });
           return;
         }
         const cleaned = applyChips(pending.slip.cleaned, pending.selectedChips);
+        const dirty = slipPiiHits(cleaned, packet);
+        if (dirty.length) {
+          set({
+            error: `The slip still has identifiers (${dirty.map((d) => d.term).join(", ")}). Nothing was sent.`,
+          });
+          return;
+        }
+        const at = Date.now();
         const userTurn: Turn = {
           id: uid("q"),
           role: "user",
           mode: "lookup",
           text: pending.question,
           slip: { ...pending.slip, cleaned, includedChips: pending.selectedChips },
-          createdAt: Date.now(),
+          createdAt: at,
         };
         set({
           working: { stage: "Carrying the call slip outside" },
           pendingSlip: null,
           error: null,
           turns: [...get().turns, userTurn],
+          receipts: receiptsAfterAttempt(
+            get().receipts,
+            makeSlipReceipt(cleaned, at, uid("rx"), { model: lampModelId() }),
+          ),
         });
         const result = await run({ cleaned });
         const stamp = todayStamp();
@@ -325,16 +374,6 @@ export const useDesk = create<DeskState>()(
               slip: { ...pending.slip, cleaned, includedChips: pending.selectedChips },
               createdAt: Date.now(),
             },
-          ],
-          receipts: [
-            {
-              id: uid("rx"),
-              at: Date.now(),
-              kind: "lookup",
-              summary: "Call slip — packet stayed on the desk",
-              payload: cleaned,
-            },
-            ...get().receipts,
           ],
         });
       },

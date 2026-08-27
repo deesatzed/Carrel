@@ -28,9 +28,9 @@
   --color-lamp: #5ea37a;
   --color-glow: #c4b48a;
 
-  --font-sans: "Figtree", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Fraunces", "Iowan Old Style", "Palatino Linotype", serif;
-  --font-display: "Fraunces", "Iowan Old Style", serif;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   --radius-xs: 4px;
